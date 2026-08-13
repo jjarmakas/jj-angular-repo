@@ -1,0 +1,16 @@
+What it sets up:
+
+Action: powershell.exe launching Copy-WASHistoricalLogs.ps1 with your source/destination args, hidden window.
+Two triggers: at startup, and a 1-minute-forever watchdog (MultipleInstances IgnoreNew makes each tick a no-op while the shipper's already running, and a relaunch within a minute if it ever died) — this sidesteps Task Scheduler's capped restart-count problem for a process meant to run forever.
+ExecutionTimeLimit = 0 — without this, Task Scheduler kills any task after its default 72-hour limit, which would silently kill your shipper on day 3.
+Two identity options: a domain service account (prompts for credentials, never hardcoded) with direct share access, or -UseSystemAccount if the shipper script itself authenticates to the share via -CredentialPath.
+-ExportXmlPath optionally dumps the registered task's real XML afterward (via Export-ScheduledTask), so you get a config-management-ready XML generated from the actual task rather than hand-typed and prone to schema/SID mistakes.
+To use it (elevated PowerShell on the WebSphere host):
+
+
+.\Register-LogShipperTask.ps1 `
+    -ScriptPath 'C:\WebSphere\LogShipper\Copy-WASHistoricalLogs.ps1' `
+    -SourcePath 'C:\WebSphere\AppServer\profiles\AppSrv01\logs\server1' `
+    -DestinationPath '\\fileshare\WASLogArchive' `
+    -TaskUser 'CONTOSO\svc-was-logshipper' `
+    -ExportXmlPath 'C:\WebSphere\LogShipper\WAS-LogShipper.task.xml'
