@@ -11,8 +11,9 @@
         by Task Scheduler. Task Scheduler's minimum reliable trigger granularity is
         1 minute, and spawning a new powershell.exe process every second is heavy
         and fragile. Instead this script starts once and loops forever internally.
-      - Never copies the two files WAS is actively writing to (SystemOut.log /
-        SystemErr.log) - only files that have already been rotated out.
+      - Only copies rotated historical log files (SystemOut_* / SystemErr_*),
+        which also naturally excludes the live SystemOut.log / SystemErr.log
+        that WAS is actively writing to.
       - Every loop iteration is wrapped in try/catch so a transient error (share
         offline, file mid-rename, permission blip) never kills the process - it
         just logs and retries next second. Process-level survival (in case of a
@@ -44,8 +45,11 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$DestinationPath,
 
-    # File names that are the *live* logs and must never be copied.
-    [string[]]$ExcludeFileNames = @('SystemOut.log', 'SystemErr.log', 'native_stdout.log', 'native_stderr.log'),
+    # Only rotated historical log files matching these name patterns are copied;
+    # this naturally excludes the live SystemOut.log / SystemErr.log (and any
+    # other file in the directory) since rotated files are named e.g.
+    # SystemOut_16.08.13_00.00.00.log / SystemErr_16.08.13_00.00.00.log.
+    [string[]]$IncludeFileNamePatterns = @('SystemOut_*', 'SystemErr_*'),
 
     # Optional path to a credential exported with Export-Clixml (DPAPI-encrypted,
     # tied to the account that will run this script) if the account running the
@@ -226,7 +230,10 @@ function Invoke-ShipCycle {
     }
 
     $candidates = Get-ChildItem -LiteralPath $SourcePath -File -ErrorAction SilentlyContinue |
-        Where-Object { $ExcludeFileNames -notcontains $_.Name }
+        Where-Object {
+            $name = $_.Name
+            ($IncludeFileNamePatterns | Where-Object { $name -like $_ }).Count -gt 0
+        }
 
     foreach ($file in $candidates) {
         try {
